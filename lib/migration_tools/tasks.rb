@@ -82,7 +82,7 @@ module MigrationTools
         single_db_migrator = migrator_for_multi_database(db_config, nil)
         hash[db_config.spec_name] = {
           pending_migrations: filter_pending_migrations_for_group(single_db_migrator.pending_migrations),
-          db_config:
+          db_config: db_config
         }
       end
 
@@ -90,6 +90,7 @@ module MigrationTools
     end
 
     def pending_migrations
+      return [] if multi_database_setup?
       return @pending_migrations if defined?(@pending_migrations) && @pending_migrations
 
       @pending_migrations = filter_pending_migrations_for_group(migrator.pending_migrations)
@@ -119,7 +120,11 @@ module MigrationTools
         notify_pending_migrations(pending_migrations)
       end
 
-      notify 'Your databases schems are up to date' if count.zero?
+      notify 'Your databases schemas are up to date' if count.zero?
+    end
+
+    def any_pending_migrations_for_multi_database?
+      multi_db_pending_migrations.any? { |_, db_hash| db_hash[:pending_migrations].any? }
     end
 
     def run_migrations_for_multi_database
@@ -132,6 +137,9 @@ module MigrationTools
         pending_migrations.each do |migration|
           migrator_for_multi_database(db_config, migration.version).run
         end
+
+        Rake::Task['db:schema:dump'].invoke if ActiveRecord::Base.schema_format == :ruby
+        Rake::Task['db:structure:dump'].invoke if ActiveRecord::Base.schema_format == :sql
       end
     end
 
@@ -169,7 +177,6 @@ module MigrationTools
                 migrator(migration.version).run
               end
 
-              # TODO: How to do this for multi db?
               Rake::Task['db:schema:dump'].invoke if ActiveRecord::Base.schema_format == :ruby
               Rake::Task['db:structure:dump'].invoke if ActiveRecord::Base.schema_format == :sql
             end
@@ -195,7 +202,6 @@ module MigrationTools
           end
         end
 
-        # TODO: Finished here:
         namespace :abort_if_pending_migrations do
           MigrationTools::MIGRATION_GROUPS.each do |migration_group|
             desc "Raises an error if there are pending #{migration_group} migrations"
@@ -203,7 +209,9 @@ module MigrationTools
               self.group = migration_group.to_s
               Rake::Task['db:migrate:list'].invoke
               Rake::Task['db:migrate:list'].reenable
-              abort 'Run "rake db:migrate" to update your database then try again.' if pending_migrations.any?
+              if any_pending_migrations_for_multi_database? || pending_migrations.any?
+                abort 'Run "rake db:migrate" to update your database then try again.'
+              end
             end
           end
         end
@@ -214,7 +222,7 @@ module MigrationTools
       if group.empty?
         puts string
       else
-        puts string + ' for group "' + group + '"'
+        puts "#{string} for group \"#{group}\""
       end
     end
   end
