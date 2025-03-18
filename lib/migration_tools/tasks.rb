@@ -47,7 +47,7 @@ module MigrationTools
         migrate_up(ActiveRecord::MigrationContext.new(
           migrations_paths,
           ActiveRecord::SchemaMigration
-        ).migrations, ActiveRecord::SchemaMigration, target_version)
+        ).migrations, target_version, ActiveRecord::SchemaMigration)
       elsif ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR == 2
         migrate_up(ActiveRecord::MigrationContext.new(migrations_paths).migrations, target_version)
       else
@@ -55,7 +55,7 @@ module MigrationTools
       end
     end
 
-    def migrate_up(migrations, schema_migration, target_version)
+    def migrate_up(migrations, target_version, schema_migration = nil)
       if ActiveRecord::VERSION::MAJOR >= 6
         ActiveRecord::Migrator.new(:up, migrations, schema_migration, target_version)
       else
@@ -124,6 +124,8 @@ module MigrationTools
     end
 
     def any_pending_migrations_for_multi_database?
+      return false unless multi_database_setup?
+
       multi_db_pending_migrations.any? { |_, db_hash| db_hash[:pending_migrations].any? }
     end
 
