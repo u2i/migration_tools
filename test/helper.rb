@@ -3,8 +3,10 @@ require 'minitest/autorun'
 require 'minitest/spec'
 require 'minitest/rg'
 require 'mocha/minitest'
+require 'logger'
 require 'active_support/all'
 require 'migration_tools'
+require File.expand_path('rails_mock', __dir__) if defined?(Rails)
 
 MIGRATION_CLASS = if ActiveRecord::Migration.respond_to?(:[])
                     rails_version = "#{ActiveRecord::VERSION::MAJOR}.#{ActiveRecord::VERSION::MINOR}".to_f
@@ -13,8 +15,8 @@ MIGRATION_CLASS = if ActiveRecord::Migration.respond_to?(:[])
                     ActiveRecord::Migration
                   end
 
-dir = File.expand_path('../migrations', __FILE__)
+dir = File.expand_path('migrations', __dir__)
 ActiveRecord::Migrator.migrations_paths.replace([dir])
-Dir.glob(File.join(dir, '*.rb')).each {|f| require f}
+Dir.glob(File.join(dir, '*.rb')).each { |f| require f }
 
 ActiveRecord::Migration.verbose = false
