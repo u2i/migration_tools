@@ -1,4 +1,7 @@
+# frozen_string_literal: true
+
 require File.expand_path '../helper', __FILE__
+
 
 describe MigrationTools do
   before do
@@ -12,6 +15,7 @@ describe MigrationTools do
     Rake::Task.clear
     Rake::Task.define_task("environment")
     Rake::Task.define_task("db:schema:dump")
+    Rake::Task.define_task("db:structure:dump")
 
     @task = MigrationTools::Tasks.new
   end
@@ -181,5 +185,127 @@ describe MigrationTools do
     MigrationTools::Tasks.any_instance.expects(:notify).with("     1 before Beta").once
 
     Rake::Task["db:migrate:list:before"].invoke
+  end
+
+  # New tests for multi-database functionality
+  describe "multi-database functionality" do
+    before do
+      skip "Multi-database functionality requires ActiveRecord 6.0+" unless ActiveRecord::VERSION::MAJOR >= 6 && 
+
+      # Mock the database_configs_hash method to simulate multiple databases
+      @primary_config = mock('primary_config')
+      @primary_config.stubs(:spec_name).returns('primary')
+      @primary_config.stubs(:config).returns({
+        adapter: 'sqlite3',
+        database: ':memory:'
+      })
+
+      @secondary_config = mock('secondary_config')
+      @secondary_config.stubs(:spec_name).returns('secondary')
+      @secondary_config.stubs(:config).returns({
+        adapter: 'sqlite3',
+        database: ':memory:',
+        migrations_paths: 'db/secondary_migrate'
+      })
+
+      @configs = [@primary_config, @secondary_config]
+      @task.stubs(:database_configs_hash).returns(@configs)
+    end
+
+    it "detects multi-database setup" do
+      assert @task.multi_database_setup?, "Should detect multi-database setup"
+    end
+
+    it "returns pending migrations for each database" do
+
+      # Setup mock migration contexts
+      connection = mock('connection')
+
+      schema_migration = mock('schema_migration')
+      connection.stubs(:schema_migration).returns(schema_migration)
+
+      ActiveRecord::Base.stubs(:establish_connection).returns(mock('ar_connection'))
+      ActiveRecord::Base.connection.stubs(:establish_connection).returns(connection)
+
+      migration_context = mock('migration_context')
+      migration_context.stubs(:migrations).returns(proxies)
+      ActiveRecord::MigrationContext.stubs(:new).returns(migration_context)
+
+      # Execute the method
+      result = @task.multi_db_pending_migrations
+
+      # Verify results
+      assert_equal 2, result.size, "Should return info for 2 databases"
+      assert result.key?('primary'), "Should include primary database"
+      assert result.key?('secondary'), "Should include secondary database"
+      assert result['primary'].key?(:pending_migrations), "Should include pending migrations for primary"
+      assert result['secondary'].key?(:pending_migrations), "Should include pending migrations for secondary"
+    end
+
+    it "checks for pending migrations across all databases" do
+      # Setup for a case WITH pending migrations
+      @task.stubs(:multi_db_pending_migrations).returns({
+        'primary' => { pending_migrations: [proxies.first], db_config: @primary_config },
+        'secondary' => { pending_migrations: [], db_config: @secondary_config }
+      })
+      assert @task.any_pending_migrations_for_multi_database?, "Should detect pending migrations"
+
+      # Setup for a case WITHOUT pending migrations
+      @task.stubs(:multi_db_pending_migrations).returns({
+        'primary' => { pending_migrations: [], db_config: @primary_config },
+        'secondary' => { pending_migrations: [], db_config: @secondary_config }
+      })
+      assert_equal false, @task.any_pending_migrations_for_multi_database?, "Should not detect pending migrations when there are none"
+    end
+
+    it "runs migrations for multiple databases" do
+      # Setup migrations
+      @task.stubs(:multi_db_pending_migrations).returns({
+        'primary' => { 
+          pending_migrations: [proxies.first], 
+          db_config: @primary_config 
+        },
+        'secondary' => { 
+          pending_migrations: [proxies[1]], 
+          db_config: @secondary_config 
+        }
+      })
+
+      # Expect migrations to be run for each database
+      single_db_migrator = mock('single_db_migrator')
+      single_db_migrator.expects(:run).times(2)
+      @task.expects(:migrator_for_multi_database).with(@primary_config, proxies.first.version).returns(single_db_migrator)
+      @task.expects(:migrator_for_multi_database).with(@secondary_config, proxies[1].version).returns(single_db_migrator)
+
+      # Expect schema dump
+      @task.expects(:dump_schema).times(2)
+
+      # Execute the method
+      @task.run_migrations_for_multi_database
+    end
+    it "lists pending migrations for multi-database" do
+      # Setup
+      ENV['GROUP'] = 'before'
+      @task.stubs(:multi_database_setup?).returns(true)
+      @task.stubs(:multi_db_pending_migrations).returns({
+        'primary' => { 
+          pending_migrations: [proxies[0]], 
+          db_config: @primary_config 
+        },
+        'secondary' => { 
+          pending_migrations: [proxies[1]], 
+          db_config: @secondary_config 
+        }
+      })
+
+      # Expectations
+      @task.expects(:notify).with("You have 1 pending migrations for primary", "before").once
+      @task.expects(:notify).with("You have 1 pending migrations for secondary", "before").once
+      @task.expects(:notify_pending_migrations).with([proxies[0]]).once
+      @task.expects(:notify_pending_migrations).with([proxies[1]]).once
+
+      # Execute the method
+      @task.check_multi_db_pending_migrations
+    end
   end
 end

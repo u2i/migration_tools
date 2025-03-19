@@ -30,6 +30,9 @@ module MigrationTools
     end
 
     def database_configs_hash
+      return [] unless defined?(Rails) && Rails.respond_to?(:env) &&
+                       ActiveRecord::Base.configurations.respond_to?(:configs_for)
+
       @database_configs_hash ||= ActiveRecord::Base.configurations.configs_for(env_name: Rails.env)
     end
 
