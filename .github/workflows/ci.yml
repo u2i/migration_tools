@@ -13,6 +13,8 @@ jobs:
           - rails5.2
           - rails6.0
           - rails6.1
+          - activerecord6.0_no_rails
+          - activerecord6.1_no_rails
     env:
       BUNDLE_GEMFILE: gemfiles/${{ matrix.gemfile }}.gemfile
     steps:
