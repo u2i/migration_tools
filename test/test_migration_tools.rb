@@ -24,11 +24,11 @@ describe MigrationTools do
   end
 
   def migrations
-    [Alpha, Beta, Delta, Kappa]
+    [Alpha, Beta, Delta, Kappa, Omikron]
   end
 
-  def proxies
-    @proxies ||= migrations.map { |m| migration_proxy(m) }
+  def pending_migrations
+    @pending_migrations ||= migrations.map { |m| migration_proxy(m) }
   end
 
   def migration_proxy(m)
@@ -40,10 +40,15 @@ describe MigrationTools do
     proxy
   end
 
+  it "do not detects multi-database setup" do
+    assert_equal false, @task.multi_database_setup?
+  end
+
   it 'grouping' do
     assert_equal([Alpha, Beta], migrations.select { |m| m.migration_group == 'before' })
     assert_equal([Delta], migrations.select { |m| m.migration_group == 'change' })
     assert_equal([Kappa], migrations.select { |m| m.migration_group.nil? })
+    assert_equal([Omikron], migrations.select { |m| m.migration_group == 'after' })
   end
 
   it 'runtime_checking' do
@@ -77,6 +82,10 @@ describe MigrationTools do
   it 'task_presence' do
     assert Rake::Task['db:migrate:list']
     assert Rake::Task['db:migrate:group']
+    assert Rake::Task['db:migrate:list:before']
+    assert Rake::Task['db:migrate:list:during']
+    assert Rake::Task['db:migrate:list:after']
+    assert Rake::Task['db:migrate:list:change']
     assert Rake::Task['db:migrate:group:before']
     assert Rake::Task['db:migrate:group:during']
     assert Rake::Task['db:migrate:group:after']
@@ -84,7 +93,7 @@ describe MigrationTools do
   end
 
   it 'migrate_list_without_pending_without_group' do
-    0.upto(3).each { |i| @task.migrator(i).run }
+    0.upto(4).each { |i| @task.migrator(i).run }
 
     MigrationTools::Tasks.any_instance.expects(:notify).with('Your database schema is up to date', '').once
 
@@ -102,12 +111,12 @@ describe MigrationTools do
   end
 
   it 'migrate_list_with_pending_without_group' do
-    MigrationTools::Tasks.any_instance.expects(:notify).with('You have 4 pending migrations', '').once
+    MigrationTools::Tasks.any_instance.expects(:notify).with('You have 5 pending migrations', '').once
     MigrationTools::Tasks.any_instance.expects(:notify).with('     0 before Alpha').once
     MigrationTools::Tasks.any_instance.expects(:notify).with('     1 before Beta').once
     MigrationTools::Tasks.any_instance.expects(:notify).with('     2 change Delta').once
     MigrationTools::Tasks.any_instance.expects(:notify).with('     3        Kappa').once
-
+    MigrationTools::Tasks.any_instance.expects(:notify).with('     4 after  Omikron').once
     Rake::Task['db:migrate:list'].invoke
   end
 
@@ -125,7 +134,7 @@ describe MigrationTools do
     @task.stubs(:notify)
 
     begin
-      Rake::Task['db:abort_if_pending_migrations:after'].invoke
+      Rake::Task['db:abort_if_pending_migrations:during'].invoke
     rescue SystemExit
       raise "aborted where it shouldn't"
     end
@@ -158,11 +167,11 @@ describe MigrationTools do
   it 'migrate_group_with_pending' do
     ENV['GROUP'] = 'before'
 
-    assert_equal 4, @task.migrator.pending_migrations.count
+    assert_equal 5, @task.migrator.pending_migrations.count
 
     Rake::Task['db:migrate:group'].invoke
 
-    assert_equal 2, @task.migrator.pending_migrations.count
+    assert_equal 3, @task.migrator.pending_migrations.count
   end
 
   it 'migrate_with_invalid_group' do
@@ -211,6 +220,17 @@ describe MigrationTools do
 
       @configs = [@primary_config, @secondary_config]
       @task.stubs(:database_configs_array).returns(@configs)
+
+      # Setup expectations for migrations
+      primary_migrations = [pending_migrations.first]
+      secondary_migrations = [pending_migrations.second]
+
+      # Mock migrator calls for each database
+      @primary_migrator = mock('primary_migrator')
+      @primary_migrator.stubs(:pending_migrations).returns(primary_migrations)
+
+      @secondary_migrator = mock('secondary_migrator')
+      @secondary_migrator.stubs(:pending_migrations).returns(secondary_migrations)
     end
 
     it 'detects multi-database setup' do
@@ -218,22 +238,10 @@ describe MigrationTools do
     end
 
     it 'returns pending migrations for each database' do
-      # Setup expectations for migrations
-      primary_migrations = [proxies.first]
-      secondary_migrations = [proxies.second]
-
-      # Mock migrator calls for each database
-      primary_migrator = mock('primary_migrator')
-      primary_migrator.stubs(:pending_migrations).returns(primary_migrations)
-
-      secondary_migrator = mock('secondary_migrator')
-      secondary_migrator.stubs(:pending_migrations).returns(secondary_migrations)
-
       # Expect calls to create migrators for each database
-      @task.expects(:migrator_for_multi_database).with(@primary_config, nil).returns(primary_migrator)
-      @task.expects(:migrator_for_multi_database).with(@secondary_config, nil).returns(secondary_migrator)
+      @task.expects(:migrator_for_multi_database).with(@primary_config, nil).returns(@primary_migrator)
+      @task.expects(:migrator_for_multi_database).with(@secondary_config, nil).returns(@secondary_migrator)
 
-      # Execute the method
       result = @task.multi_db_pending_migrations
 
       # Verify results
@@ -242,12 +250,14 @@ describe MigrationTools do
       assert result.key?('secondary'), 'Should include secondary database'
       assert result['primary'].key?(:pending_migrations), 'Should include pending migrations for primary'
       assert result['secondary'].key?(:pending_migrations), 'Should include pending migrations for secondary'
+      assert result['primary'][:pending_migrations].include?(pending_migrations.first), 'Should include pending migrations for primary'
+      assert result['secondary'][:pending_migrations].include?(pending_migrations.second), 'Should include pending migrations for secondary'
     end
 
     it 'checks for pending migrations across all databases' do
       # Setup for a case WITH pending migrations
       @task.stubs(:multi_db_pending_migrations).returns({
-                                                          'primary' => { pending_migrations: [proxies.first],
+                                                          'primary' => { pending_migrations: [pending_migrations.first],
                                                                          db_config: @primary_config },
                                                           'secondary' => { pending_migrations: [],
                                                                            db_config: @secondary_config }
@@ -265,15 +275,24 @@ describe MigrationTools do
                    'Should not detect pending migrations when there are none'
     end
 
+    it 'filters pending migrations for group' do
+      @task.group = 'before'
+      assert_equal [pending_migrations.first, pending_migrations.second], @task.filter_pending_migrations_for_group(pending_migrations)
+      @task.group = 'after'
+      assert_equal [pending_migrations.last], @task.filter_pending_migrations_for_group(pending_migrations)
+      @task.group = 'change'
+      assert_equal [pending_migrations.third], @task.filter_pending_migrations_for_group(pending_migrations)
+    end
+
     it 'runs migrations for multiple databases' do
       # Setup migrations
       @task.stubs(:multi_db_pending_migrations).returns({
                                                           'primary' => {
-                                                            pending_migrations: [proxies.first],
+                                                            pending_migrations: [pending_migrations.first],
                                                             db_config: @primary_config
                                                           },
                                                           'secondary' => {
-                                                            pending_migrations: [proxies[1]],
+                                                            pending_migrations: [pending_migrations.second],
                                                             db_config: @secondary_config
                                                           }
                                                         })
@@ -282,9 +301,9 @@ describe MigrationTools do
       single_db_migrator = mock('single_db_migrator')
       single_db_migrator.expects(:run).times(2)
       @task.expects(:migrator_for_multi_database).with(@primary_config,
-                                                       proxies.first.version).returns(single_db_migrator)
+                                                       pending_migrations.first.version).returns(single_db_migrator)
       @task.expects(:migrator_for_multi_database).with(@secondary_config,
-                                                       proxies[1].version).returns(single_db_migrator)
+                                                       pending_migrations.second.version).returns(single_db_migrator)
 
       # Expect schema dump
       @task.expects(:dump_schema).times(2)
@@ -292,17 +311,18 @@ describe MigrationTools do
       # Execute the method
       @task.run_migrations_for_multi_database
     end
+
     it 'lists pending migrations for multi-database' do
       # Setup
       ENV['GROUP'] = 'before'
       @task.stubs(:multi_database_setup?).returns(true)
       @task.stubs(:multi_db_pending_migrations).returns({
                                                           'primary' => {
-                                                            pending_migrations: [proxies[0]],
+                                                            pending_migrations: [pending_migrations.first],
                                                             db_config: @primary_config
                                                           },
                                                           'secondary' => {
-                                                            pending_migrations: [proxies[1]],
+                                                            pending_migrations: [pending_migrations.second],
                                                             db_config: @secondary_config
                                                           }
                                                         })
@@ -310,8 +330,8 @@ describe MigrationTools do
       # Expectations
       @task.expects(:notify).with('You have 1 pending migrations for primary', 'before').once
       @task.expects(:notify).with('You have 1 pending migrations for secondary', 'before').once
-      @task.expects(:notify_pending_migrations).with([proxies[0]]).once
-      @task.expects(:notify_pending_migrations).with([proxies[1]]).once
+      @task.expects(:notify_pending_migrations).with([pending_migrations.first]).once
+      @task.expects(:notify_pending_migrations).with([pending_migrations.second]).once
 
       # Execute the method
       @task.check_multi_db_pending_migrations
