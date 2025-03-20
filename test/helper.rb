@@ -6,7 +6,6 @@ require 'mocha/minitest'
 require 'logger'
 require 'active_support/all'
 require 'migration_tools'
-require File.expand_path('rails_mock', __dir__) if defined?(Rails)
 
 MIGRATION_CLASS = if ActiveRecord::Migration.respond_to?(:[])
                     rails_version = "#{ActiveRecord::VERSION::MAJOR}.#{ActiveRecord::VERSION::MINOR}".to_f
