@@ -29,16 +29,19 @@ module MigrationTools
       ActiveRecord::Migrator.migrations_paths
     end
 
-    def database_configs_hash
-      return [] unless defined?(Rails) && Rails.respond_to?(:env) &&
-                       ActiveRecord::Base.configurations.respond_to?(:configs_for)
+    def database_configs_array
+      unless defined?(Rails) &&
+             Rails.respond_to?(:env) &&
+             ActiveRecord::Base.configurations.respond_to?(:configs_for)
+        return []
+      end
 
-      @database_configs_hash ||= ActiveRecord::Base.configurations.configs_for(env_name: Rails.env)
+      @database_configs_array ||= ActiveRecord::Base.configurations.configs_for(env_name: Rails.env)
     end
 
     def multi_database_setup?
       @multi_database_setup ||= if ActiveRecord::VERSION::MAJOR >= 6
-                                  database_configs_hash.reject { |c| c.spec_name.end_with?('_replica') }.size > 1
+                                  database_configs_array.reject { |c| c.spec_name.end_with?('_replica') }.size > 1
                                 else
                                   false
                                 end
@@ -76,7 +79,7 @@ module MigrationTools
     end
 
     def multi_db_pending_migrations
-      @multi_db_pending_migrations ||= database_configs_hash.each_with_object({}) do |db_config, hash|
+      @multi_db_pending_migrations ||= database_configs_array.each_with_object({}) do |db_config, hash|
         single_db_migrator = migrator_for_multi_database(db_config, nil)
         hash[db_config.spec_name] = {
           pending_migrations: filter_pending_migrations_for_group(single_db_migrator.pending_migrations),

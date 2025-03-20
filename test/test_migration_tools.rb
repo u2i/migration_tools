@@ -187,11 +187,13 @@ describe MigrationTools do
   # New tests for multi-database functionality
   describe 'multi-database functionality' do
     before do
-      unless ActiveRecord::VERSION::MAJOR >= 6 && ActiveRecord::Base.configurations.respond_to?(:configs_for)
-        skip 'Multi-database functionality requires ActiveRecord 6.0+'
+      unless ActiveRecord::VERSION::MAJOR >= 6 &&
+             defined?(Rails) &&
+             ActiveRecord::Base.configurations.respond_to?(:configs_for)
+        skip 'Multi-database functionality requires ActiveRecord 6.0+ and Rails'
       end
 
-      # Mock the database_configs_hash method to simulate multiple databases
+      # Mock the database_configs_array method to simulate multiple databases
       @primary_config = mock('primary_config')
       @primary_config.stubs(:spec_name).returns('primary')
       @primary_config.stubs(:config).returns({
@@ -208,7 +210,7 @@ describe MigrationTools do
                                                })
 
       @configs = [@primary_config, @secondary_config]
-      @task.stubs(:database_configs_hash).returns(@configs)
+      @task.stubs(:database_configs_array).returns(@configs)
     end
 
     it 'detects multi-database setup' do
@@ -216,18 +218,20 @@ describe MigrationTools do
     end
 
     it 'returns pending migrations for each database' do
-      # Setup mock migration contexts
-      connection = mock('connection')
+      # Setup expectations for migrations
+      primary_migrations = [proxies.first]
+      secondary_migrations = [proxies.second]
 
-      schema_migration = mock('schema_migration')
-      connection.stubs(:schema_migration).returns(schema_migration)
+      # Mock migrator calls for each database
+      primary_migrator = mock('primary_migrator')
+      primary_migrator.stubs(:pending_migrations).returns(primary_migrations)
 
-      ActiveRecord::Base.stubs(:establish_connection).returns(mock('ar_connection'))
-      ActiveRecord::Base.connection.stubs(:establish_connection).returns(connection)
+      secondary_migrator = mock('secondary_migrator')
+      secondary_migrator.stubs(:pending_migrations).returns(secondary_migrations)
 
-      migration_context = mock('migration_context')
-      migration_context.stubs(:migrations).returns(proxies)
-      ActiveRecord::MigrationContext.stubs(:new).returns(migration_context)
+      # Expect calls to create migrators for each database
+      @task.expects(:migrator_for_multi_database).with(@primary_config, nil).returns(primary_migrator)
+      @task.expects(:migrator_for_multi_database).with(@secondary_config, nil).returns(secondary_migrator)
 
       # Execute the method
       result = @task.multi_db_pending_migrations
