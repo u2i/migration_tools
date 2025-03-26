@@ -54,6 +54,56 @@ The group commands
 ```
 Note that rake db:migrate is entirely unaffected by this.
 
+## Multi-Database Support
+
+As of version 1.7.1, Migration Tools automatically supports Rails 6.0+ multi-database configurations.
+
+### How It Works
+
+- Multiple databases are automatically detected for Rails 6.0+ applications
+- Migration commands run against all configured databases in your Rails application
+- Migration groups are respected across all databases
+- Each database's migrations are tracked separately
+
+### Output Format
+
+When working with multiple databases, the tool will:
+- Show pending migrations organized by database name
+- Display database-specific contexts in all outputs
+- Run migrations for each database separately while maintaining group constraints
+
+Example output for `rake db:migrate:list`:
+
+```
+You have 3 pending migrations for primary
+  1234 before  CreateUsers
+  1235 after  AddIndexToUsers
+You have 1 pending migration for animals
+  1236 before  CreatePets
+```
+
+All existing commands function the same way but now operate across all your configured databases. No additional configuration is needed - the tools automatically adapt to your Rails database configuration.
+
+## Development
+
+In order to run and develop tests you can find docker setup instructions below.
+
+### Using Docker (Recommended)
+
+1. Install Docker and Docker Compose
+2. Build and start the development container:
+   ```bash
+   docker compose build dev
+   docker compose up dev
+   ```
+3. Inside the container, you can:
+   - Run all tests: `test-all`
+   - Run specific gemfile tests: `run-test [gemfile]`
+     ```bash
+     run-test rails6.1
+     run-test activerecord6.1_no_rails
+     ```
+
 ## License
 
 Copyright 2015 Zendesk

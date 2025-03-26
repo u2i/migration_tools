@@ -1,0 +1,29 @@
+FROM ruby:2.7
+
+WORKDIR /app
+
+# Copy the entire repository
+COPY . /app/
+
+# Fix the git issue for gemspec
+RUN mkdir -p .git/refs/heads && \
+    echo "ref: refs/heads/main" > .git/HEAD && \
+    mkdir -p .git/objects && \
+    mkdir -p .git/refs/tags
+
+# Install dependencies for all gemfiles
+RUN cd gemfiles && \
+    gem install pry pry-byebug && \
+    bundle install --gemfile=rails5.2.gemfile && \
+    bundle install --gemfile=rails6.0.gemfile && \
+    bundle install --gemfile=rails6.1.gemfile && \
+    bundle install --gemfile=activerecord6.0_no_rails.gemfile && \
+    bundle install --gemfile=activerecord6.1_no_rails.gemfile
+    
+    # Add a helper script to run tests with different gemfiles
+RUN echo '#!/bin/bash\nBUNDLE_GEMFILE=gemfiles/$1.gemfile bundle exec ruby -Ilib:test test/test_migration_tools.rb' > /usr/local/bin/run-test && \
+    chmod +x /usr/local/bin/run-test
+
+# Add script to run all tests with all Rails versions
+RUN echo '#!/bin/bash\necho "Testing with Rails 5.2"\nrun-test rails5.2\necho "Testing with Rails 6.0"\nrun-test rails6.0\necho "Testing with Rails 6.1"\nrun-test rails6.1\necho "Testing with ActiveRecord 6.0 (no Rails)"\nrun-test activerecord6.0_no_rails\necho "Testing with ActiveRecord 6.1 (no Rails)"\nrun-test activerecord6.1_no_rails' > /usr/local/bin/test-all && \
+    chmod +x /usr/local/bin/test-all
