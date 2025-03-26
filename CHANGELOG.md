@@ -11,6 +11,7 @@
 - Database-specific schema migrations respecting configuration paths
 
 ### Changed
+- Dropped official support for Rails 5.1 and lower
 - Updated documentation with multi-database usage examples
 - Refactored migration execution code for better database context handling
 - Modified migration tasks to automatically detect and adapt to multi-database environments

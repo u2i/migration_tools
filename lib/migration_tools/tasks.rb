@@ -40,11 +40,8 @@ module MigrationTools
     end
 
     def multi_database_setup?
-      @multi_database_setup ||= if ActiveRecord::VERSION::MAJOR >= 6
-                                  database_configs_array.reject { |c| c.spec_name.end_with?('_replica') }.size > 1
-                                else
-                                  false
-                                end
+      @multi_database_setup ||= ActiveRecord::VERSION::MAJOR >= 6 && \
+                                database_configs_array.count { |c| !c.spec_name.end_with?('_replica') } > 1
     end
 
     def migrator(target_version = nil)
@@ -131,20 +128,15 @@ module MigrationTools
       multi_db_pending_migrations.each do |db_name, db_hash|
         pending_migrations = db_hash[:pending_migrations]
         db_config = db_hash[:db_config]
+        notify "Pending #{group.upcase} migrations for #{db_name}: "\
+               "#{pending_migrations.any? ? pending_migrations.count : '0'}"
         next unless pending_migrations.any?
 
         notify "Running #{group.upcase} migrations for #{db_name}"
         pending_migrations.each do |migration|
           migrator_for_multi_database(db_config, migration.version).run
         end
-
-        dump_schema
       end
-    end
-
-    def dump_schema
-      Rake::Task['db:schema:dump'].invoke if ActiveRecord::Base.schema_format == :ruby
-      Rake::Task['db:structure:dump'].invoke if ActiveRecord::Base.schema_format == :sql
     end
 
     def define_migrate_list
@@ -180,8 +172,6 @@ module MigrationTools
               single_db_pending_migrations.each do |migration|
                 migrator(migration.version).run
               end
-
-              dump_schema
             end
           end
         end

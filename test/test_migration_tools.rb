@@ -13,8 +13,6 @@ describe MigrationTools do
 
     Rake::Task.clear
     Rake::Task.define_task('environment')
-    Rake::Task.define_task('db:schema:dump')
-    Rake::Task.define_task('db:structure:dump')
 
     @task = MigrationTools::Tasks.new
   end
@@ -304,9 +302,6 @@ describe MigrationTools do
                                                        pending_migrations.first.version).returns(single_db_migrator)
       @task.expects(:migrator_for_multi_database).with(@secondary_config,
                                                        pending_migrations.second.version).returns(single_db_migrator)
-
-      # Expect schema dump
-      @task.expects(:dump_schema).times(2)
 
       # Execute the method
       @task.run_migrations_for_multi_database

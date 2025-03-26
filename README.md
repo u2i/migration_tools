@@ -84,6 +84,26 @@ You have 1 pending migration for animals
 
 All existing commands function the same way but now operate across all your configured databases. No additional configuration is needed - the tools automatically adapt to your Rails database configuration.
 
+## Development
+
+In order to run and develop tests you can find docker setup instructions below.
+
+### Using Docker (Recommended)
+
+1. Install Docker and Docker Compose
+2. Build and start the development container:
+   ```bash
+   docker compose build dev
+   docker compose up dev
+   ```
+3. Inside the container, you can:
+   - Run all tests: `test-all`
+   - Run specific gemfile tests: `run-test [gemfile]`
+     ```bash
+     run-test rails6.1
+     run-test activerecord6.1_no_rails
+     ```
+
 ## License
 
 Copyright 2015 Zendesk
